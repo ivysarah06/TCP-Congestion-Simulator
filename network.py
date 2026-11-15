@@ -1,5 +1,6 @@
 import heapq
 from collections import deque
+from collections import Counter
 
 
 class Acknowledgement:
@@ -17,6 +18,7 @@ class Packet:
         self.creation_time = 0.0
         self.transmission_time = None
         self.arrival_time = None
+        self.retransmitted = False
         self.status = "Created"
         # Event scheduler
         self.event_queue = []
@@ -202,7 +204,6 @@ class Network:
                 "state": current_state
             })
 
-
     def record_packet_event(self, event, packet_number=None, router_name=None):
         self.packet_events.append({
             "time": self.current_time,
@@ -307,6 +308,7 @@ class Network:
         packet = self.unacked_packets.get(sequence_number)
         if packet is None:
             return
+        packet.retransmitted = True
         # Create a new transmission attempt
         retransmitted_packet = Packet(sequence_number,self.packet_size)
         print(
@@ -416,18 +418,33 @@ class Network:
                         seq for seq in self.unacked_packets
                         if seq < ack_number
                     ]
-                    # Take an RTT sample before removing the packet
-                    sampled_packet = self.unacked_packets.get(
-                        ack_number - 1
-                    )
-                    if sampled_packet is not None:
 
-                        rtt = self.current_time - sampled_packet.sent_time
-                        self.rtt_samples.append(rtt)
+                    # New RTT sampling logic
+                    if len(acknowledged) == 1:
+                        sampled_packet = self.unacked_packets[acknowledged[0]]
+
+                        if not sampled_packet.retransmitted:
+                            rtt = self.current_time - sampled_packet.sent_time
+                            self.rtt_samples.append(rtt)
+
+                            print(
+                                f"RTT Sample: Packet {acknowledged[0]}, "
+                                f"RTT = {rtt * 1000:.2f} ms"
+                            )
+                        else:
+                            print(
+                                f"RTT Sample Skipped: Packet {acknowledged[0]} "
+                                f"was retransmitted"
+                            )
+                    else:
+                        print(
+                            f"RTT Sample Skipped: ACK {ack_number} "
+                            f"acknowledged {len(acknowledged)} packets"
+                        )
+
                     # Remove acknowledged packets
                     for seq in acknowledged:
                         del self.unacked_packets[seq]
-
                     # Restart or invalidate the retransmission timer
                     if self.unacked_packets:
                         oldest_packet = min(self.unacked_packets.keys())
@@ -588,74 +605,15 @@ class Network:
         self.send_available_packets()
         self.run()
 
-
-# if __name__ == "__main__":
-
-#     network = Network()
-
-#     # Generate 10 packets
-#     packets = [
-#         Packet(i, 1500)
-#         for i in range(1, 11)
-#     ]
-
-#     # Send all packets into the network
-#     for packet in packets:
-#         network.send_packet(packet)
-
-#     # Run the forward-path simulation
-#     network.run()
-
-#     print("\nNETWORK SUMMARY")
-
-#     for router in network.routers:
-#         print(f"\n{router.name}")
-#         print("Forwarded:", router.forwarded_packets)
-#         print("Dropped:", router.dropped_packets)
-
-#     print("\nDelivered packets:", network.delivered_packets)
-#     print("Generated ACKs:", network.generated_acks)
-
 if __name__ == "__main__":
-
     network = Network()
-
     network.start_transfer(50)
-
-    # print("\nTCP SUMMARY")
-    # print("Final CWND:", network.tcp["cwnd"])
-    # print("TCP State:", network.tcp["state"])
-    # print("Unacknowledged packet numbers:", sorted(network.unacked_packets.keys()))
-
-    # print("\nRTT SAMPLES (ms)")
-
-    # for rtt in network.rtt_samples:
-    #     print(round(rtt * 1000, 2))
-
-    # print("\nCWND HISTORY:")
-    # print(network.cwnd_history)
-
-    # print("\nTCP STATE HISTORY:")
-    # print(network.state_history)
-
-    # print("\nPACKET EVENTS:")
-    # print(network.packet_events[:15])
-
-    # print("\nTOTAL PACKET EVENTS:")
-    # print(len(network.packet_events))
-
-    from collections import Counter
-
-    event_counts = Counter(
-        event["event"] for event in network.packet_events
-    )
+    event_counts = Counter(event["event"] for event in network.packet_events)
 
     print("EVENT COUNTS:")
     print(event_counts)
 
-    times = [
-        event["time"] for event in network.packet_events
-    ]
+    times = [event["time"] for event in network.packet_events]
 
     print(
         "Timestamps in chronological order:",

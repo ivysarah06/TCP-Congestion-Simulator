@@ -63,15 +63,3 @@ def calculate_all_metrics(results):
         "average_rtt_ms": calculate_average_rtt(results),
         "completion_time": calculate_completion_time(results)
     }
-
-from simulator import run_simulation
-from metrics import calculate_all_metrics
-
-results = run_simulation(50)
-
-metrics = calculate_all_metrics(results)
-
-print("\nPERFORMANCE METRICS")
-
-for name, value in metrics.items():
-    print(f"{name}: {value:.4f}")
