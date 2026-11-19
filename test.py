@@ -1,5 +1,6 @@
 from simulator import run_simulation
 from metrics import calculate_all_metrics
+from collections import Counter
 
 results = run_simulation(50)
 
@@ -22,3 +23,26 @@ retransmitted_packets = {
 
 print("Unique retransmitted packets:", len(retransmitted_packets))
 print("Average RTT (ms):", metrics["average_rtt_ms"])
+
+
+router_counts = Counter(
+    event["router"]
+    for event in results["packet_events"]
+    if event["event"] == "forwarded"
+)
+
+print("\nPACKETS FORWARDED BY EACH ROUTER:")
+
+for router in ["R1", "R2", "R3", "R4", "R5"]:
+    print(f"{router}: {router_counts[router]}")
+
+print("\nPACKET DROPS BY ROUTER:")
+
+drop_counts = Counter(
+    event["router"]
+    for event in results["packet_events"]
+    if event["event"] == "dropped"
+)
+
+for router in ["R1", "R2", "R3", "R4", "R5"]:
+    print(f"{router}: {drop_counts[router]}")

@@ -120,24 +120,32 @@ class Router:
 class Network:
 
     def __init__(self):
+        
+        # Forward-direction routers
         self.routers = [
             Router("R1", 10, 10, 1),
-            Router("R2", 5, 2, 1),
-            Router("R3", 10, 10, 1)
+            Router("R2", 8, 4, 1),
+            Router("R3", 10, 10, 1),
+            Router("R4", 6, 3, 1),
+            Router("R5", 10, 10, 1)
         ]
-        # Create the four links
+        # Forward-direction links
         self.links = [
             Link(10, 10),   # Sender -> R1
-            Link(50, 10),   # R1 -> R2
-            Link(50, 10),   # R2 -> R3
-            Link(10, 10)    # R3 -> Receiver
+            Link(30, 10),   # R1 -> R2
+            Link(30, 10),   # R2 -> R3
+            Link(30, 10),   # R3 -> R4
+            Link(30, 10),   # R4 -> R5
+            Link(10, 10)    # R5 -> Receiver
         ]
         self.sender_link_available_time = 0.0
-        # Reverse-direction output queues
+        # Reverse-direction ACK routers
         self.ack_routers = [
-        Router("R3_ACK", 10, 10, 1),
-        Router("R2_ACK", 5, 2, 1),
-        Router("R1_ACK", 10, 10, 1)
+            Router("R5_ACK", 10, 10, 1),
+            Router("R4_ACK", 6, 3, 1),
+            Router("R3_ACK", 10, 10, 1),
+            Router("R2_ACK", 8, 4, 1),
+            Router("R1_ACK", 10, 10, 1)
         ]
         # Reverse link transmission availability
         self.ack_link_available_time = 0.0
@@ -265,15 +273,26 @@ class Network:
         self.sender_link_available_time = (start_time + transmission_delay)
         self.schedule_event(arrival_time, "PACKET_ARRIVAL", packet, "R1")
 
+    
     def send_ack(self, ack):
-        # Reverse link: Receiver -> R3
-        link = self.links[3]
-        start_time = max(self.current_time, self.ack_link_available_time)
+        # Reverse link: Receiver -> R5
+        link = self.links[5]
+        start_time = max(
+            self.current_time,
+            self.ack_link_available_time
+        )
         transmission_delay = link.calculate_transmission_delay(ack)
         propagation_delay = link.calculate_propagation_delay()
-        arrival_time = (start_time + transmission_delay + propagation_delay)
-        self.ack_link_available_time = (start_time + transmission_delay)
-        self.schedule_event(arrival_time, "ACK_ARRIVAL", ack, "R3_ACK")
+        arrival_time = (
+            start_time + transmission_delay + propagation_delay
+        )
+        self.ack_link_available_time = start_time + transmission_delay
+        self.schedule_event(
+            arrival_time,
+            "ACK_ARRIVAL",
+            ack,
+            "R5_ACK"
+        )
 
 
     def send_available_packets(self):
@@ -288,7 +307,10 @@ class Network:
 
             self.unacked_packets[self.next_sequence] = packet
             self.send_packet(packet)
-            self.record_packet_event("transmitted", packet_number=self.next_sequence)
+            self.record_packet_event(
+                "transmitted", 
+                packet_number=self.next_sequence
+            )
             # Start RTO timer for the oldest outstanding packet
             if start_timer:
                 self.start_retransmission_timer(
@@ -316,7 +338,10 @@ class Network:
             f"Retransmitting Packet {sequence_number}"
         )
         self.send_packet(retransmitted_packet)
-        self.record_packet_event("retransmitted",packet_number=sequence_number)
+        self.record_packet_event(
+            "retransmitted",
+            packet_number=sequence_number
+        )
 
     def process_next_event(self):
         event = self.get_next_event()
@@ -379,7 +404,7 @@ class Network:
                 self.current_time
             )
             router_index = self.routers.index(router)
-            next_targets = ["R2", "R3", "RECEIVER"]
+            next_targets = ["R2", "R3", "R4", "R5", "RECEIVER"]
             for completed_packet in completed_packets:
                 self.record_packet_event(
                     "forwarded",
@@ -478,6 +503,10 @@ class Network:
                     on_duplicate_ack(self.tcp, ack_number)
                     self.record_tcp_state()
                     if self.tcp["retransmit"]:
+                        self.record_packet_event(
+                            "fast_retransmit",
+                            packet_number=ack_number
+                        )
                         self.retransmit_packet(ack_number)
                         self.tcp["retransmit"] = False
 
@@ -535,10 +564,13 @@ class Network:
                 f"{self.current_time * 1000:.2f} ms: "
                 f"RTO expired for Packet {oldest_sequence}"
             )
-
+            # Record Timeout Recovery trigger
+            self.record_packet_event(
+                "timeout_recovery",
+                packet_number=oldest_sequence
+            )
             # Apply TCP Reno timeout response
             from tcp_reno import on_timeout
-
             flight_size = len(self.unacked_packets)
             on_timeout(self.tcp, flight_size)
             self.record_tcp_state()
@@ -572,9 +604,14 @@ class Network:
                 self.current_time
             )
             router_index = self.ack_routers.index(router)
-            next_targets = ["R2_ACK", "R1_ACK", "SENDER"]
-            # Reverse link indices: R3->R2, R2->R1, R1->Sender
-            link_indices = [2, 1, 0]
+            next_targets = [
+                "R4_ACK",
+                "R3_ACK",
+                "R2_ACK",
+                "R1_ACK",
+                "SENDER"
+            ]
+            link_indices = [4, 3, 2, 1, 0]
             for ack in completed_acks:
                 next_target = next_targets[router_index]
                 next_link = self.links[link_indices[router_index]]
